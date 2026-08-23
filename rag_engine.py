@@ -30,17 +30,27 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 try:
     import pymupdf as _fitz  # type: ignore[import-untyped]
     from rapidocr_onnxruntime import RapidOCR  # type: ignore[import-untyped]
-    _OCR_ENGINE = RapidOCR()
     _HAS_OCR = True
+    _OCR_ENGINE = None  # lazy-loaded on first use
 except ImportError:
     _HAS_OCR = False
     _OCR_ENGINE = None
 
 _ocr_log = logging.getLogger(__name__)
-if _HAS_OCR:
-    _ocr_log.info("OCR enabled: image-based PDFs will be text-extracted via RapidOCR.")
-else:
-    _ocr_log.info("OCR disabled: install pymupdf + rapidocr-onnxruntime for image PDF support.")
+
+
+def _get_ocr_engine():
+    """Lazy-load the RapidOCR engine only when first needed."""
+    global _OCR_ENGINE  # noqa: PLW0603
+    if _OCR_ENGINE is None:
+        if _HAS_OCR:
+            _ocr_log.info("Initializing OCR engine (first use)...")
+            _OCR_ENGINE = RapidOCR()
+            _ocr_log.info("OCR enabled: image-based PDFs will be text-extracted via RapidOCR.")
+        else:
+            _ocr_log.info("OCR disabled: install pymupdf + rapidocr-onnxruntime for image PDF support.")
+            return None
+    return _OCR_ENGINE
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -464,7 +474,8 @@ class RAGEngine:
 
     def _ocr_page(self, path, page_idx, dpi=200):
         """Render a PDF page to an image and run OCR to extract text."""
-        if not _HAS_OCR or _OCR_ENGINE is None:
+        ocr = _get_ocr_engine()
+        if ocr is None:
             return ""
         try:
             doc = _fitz.open(str(path))
@@ -475,7 +486,7 @@ class RAGEngine:
             pix = page.get_pixmap(dpi=dpi)
             img_bytes = pix.tobytes("png")
             doc.close()
-            result, _ = _OCR_ENGINE(img_bytes)
+            result, _ = ocr(img_bytes)
             if result:
                 return " ".join(item[1] for item in result)
         except Exception as e:

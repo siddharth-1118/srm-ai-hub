@@ -137,11 +137,16 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 3. Initialize the retrieval engine (loads the precomputed index; no model downloads)
+# 3. Initialize the retrieval engine (cached across reruns; loads precomputed index)
+@st.cache_resource
+def _load_rag_engine():
+    engine = RAGEngine()
+    engine.build_or_load_index()
+    return engine
+
 if "rag_engine" not in st.session_state:
     with st.spinner("Loading brochure index..."):
-        st.session_state.rag_engine = RAGEngine()
-        st.session_state.rag_engine.build_or_load_index()
+        st.session_state.rag_engine = _load_rag_engine()
     st.toast("Index loaded successfully!", icon="✅")
 
 if "chat_history" not in st.session_state:
