@@ -316,8 +316,8 @@ _HOSTEL_FEE_ROW_RE = re.compile(
 )
 
 
-def _format_hostel_table(text):
-    """Parse curated hostel text and render as a markdown table."""
+def _format_hostel_table(text, filter_name=None):
+    """Parse curated hostel text and render as a markdown table, optionally filtering by specific hostel name."""
     # Extract title (everything before the first colon before a fee entry)
     title_match = re.match(r'([^:]+):', text)
     title = title_match.group(1).strip() if title_match else "Hostel Fees"
@@ -325,16 +325,37 @@ def _format_hostel_table(text):
     rows = _HOSTEL_FEE_ROW_RE.findall(text)
     if not rows:
         return None
-    
+
+    # If filtering, check if any row's hostel name matches the filter
+    if filter_name:
+        has_match = False
+        norm_filter = re.sub(r'[^a-z0-9]', '', filter_name.lower())
+        for room_type, hostel_name, hostel_name2, hostel_fees, mess_fees, total_fees in rows:
+            name = (hostel_name or hostel_name2 or "").strip()
+            norm_name = re.sub(r'[^a-z0-9]', '', name.lower())
+            if norm_filter in norm_name or norm_name in norm_filter:
+                has_match = True
+                break
+        if not has_match:
+            return None
+
     lines = [f"### {title}", ""]
     lines.append("| Room Type & Sharing | Hostel Name | Hostel Fees | Mess Fees | Total Fees |")
     lines.append("|---|---|---|---|---|")
     seen_rows = set()
+    rows_added = 0
     for room_type, hostel_name, hostel_name2, hostel_fees, mess_fees, total_fees in rows:
         name = (hostel_name or hostel_name2 or "-").strip()
         # Fix known OCR quirks
         if name.lower() == "bunker cot":
             name = "Meenakshi"
+            
+        if filter_name:
+            norm_name = re.sub(r'[^a-z0-9]', '', name.lower())
+            norm_filter = re.sub(r'[^a-z0-9]', '', filter_name.lower())
+            if norm_filter not in norm_name and norm_name not in norm_filter:
+                continue
+
         row_key = f"{room_type.strip().lower()}|{name.lower()}"
         if row_key in seen_rows:
             continue
@@ -342,7 +363,11 @@ def _format_hostel_table(text):
         lines.append(
             f"| {room_type.strip()} | {name} | Rs {hostel_fees} | Rs {mess_fees} | Rs {total_fees} |"
         )
+        rows_added += 1
     
+    if rows_added == 0:
+        return None
+
     # Extract footer notes (Laundry, booking date, etc.)
     note_match = re.search(r'(Boys|Girls)?\s*Laundry[^.]*Optional', text, re.IGNORECASE)
     if note_match:
@@ -363,7 +388,7 @@ def _extract_hostel_answer(query, results):
 
     # Check if a specific hostel name is mentioned in the query
     hostel_words = [w for w in re.findall(r'\b[a-zA-Z]+\b', query.lower()) 
-                    if w not in ["what", "is", "the", "fees", "of", "boys", "girls", "hostel", "accommodation", "room", "sharing", "rates"]]
+                    if w not in ["what", "is", "the", "fees", "of", "boys", "girls", "hostel", "accommodation", "room", "sharing", "rates", "srm", "srmist"]]
     if hostel_words:
         matched_in_chunks = False
         for word in hostel_words:
@@ -392,6 +417,20 @@ def _extract_hostel_answer(query, results):
                     "- **JA Block 2 (off-campus)**"
                 )
 
+    # Detect if a known hostel is explicitly requested to filter rows
+    KNOWN_HOSTELS_LOWER = [
+        "pierre fauchard", "pf", "oori", "kaari", "adhiyaman", "n block", "n-block", 
+        "green pearl", "ja block", "sannasi", "nelson mandela", "premium boys", 
+        "malligai", "senbagam", "kopperundevi", "esq", "kalpana chawla", "meenakshi", 
+        "thamarai", "mullai"
+    ]
+    filter_name = None
+    query_lower = query.lower()
+    for kh in KNOWN_HOSTELS_LOWER:
+        if kh in query_lower:
+            filter_name = kh
+            break
+
     hostel_chunks = []
     for res in results:
         chunk = res["chunk"]
@@ -416,12 +455,13 @@ def _extract_hostel_answer(query, results):
     # Try to render as tables, show at most 4 to avoid overwhelming output
     parts = []
     for text in unique[:4]:
-        table = _format_hostel_table(text)
+        table = _format_hostel_table(text, filter_name=filter_name)
         if table:
             parts.append(table)
         else:
-            parts.append(text)
-    return "\n\n".join(parts)
+            if not filter_name:
+                parts.append(text)
+    return "\n\n".join(parts) if parts else None
 
 
 def synthesize_answer(query, results, engine):
