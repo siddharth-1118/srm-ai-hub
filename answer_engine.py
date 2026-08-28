@@ -582,14 +582,38 @@ def llm_answer(query, results, config=None, timeout=60):
         data = json.loads(resp.read().decode("utf-8"))
     return data["choices"][0]["message"]["content"].strip()
 
+def generate_answer(query, results, engine, config=None, chat_history=None):
+    # Run targeted extractors first for exact rendering (e.g. hostel fee tables, placement stats)
+    for extractor in (_extract_phone_answer, _extract_placement_answer, _extract_hostel_answer):
+        ans = extractor(query, results)
+        if ans:
+            return ans, False
 
-def generate_answer(query, results, engine, config=None):
-    """Generate the best answer available: LLM if configured, else local."""
+    # Route broad listing queries to heuristic list composer for instant, 100% accurate results
+    listy = engine.is_list_query(query) or (
+        bool(_PROGRAM_WORDS.search(query.lower()))
+        and bool(_LIST_INTENT.search(query.lower()))
+    )
+    if listy:
+        ans = _compose_list_answer(results, engine, query)
+        if ans:
+            return ans, False
+
     if llm_configured(config):
         try:
             return llm_answer(query, results, config), True
         except Exception as e:  # noqa: BLE001 - fall back to offline synthesis
-            print(f"LLM answer failed ({e}); using local synthesis.")
+            print(f"LLM API answer failed ({e}); using local synthesis.")
+            
+    # Try local offline LLM
+    try:
+        from llm_local import generate_local_answer
+        ans = generate_local_answer(query, results, chat_history)
+        if ans:
+            return ans, True
+    except Exception as e:
+        print(f"Local offline LLM failed ({e}); using heuristic synthesis.")
+        
     return synthesize_answer(query, results, engine), False
 
 

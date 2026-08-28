@@ -131,7 +131,7 @@ st.markdown(
     """
     <div class="banner">
         <div class="banner-title">🎓 SRM Admissions AI Hub</div>
-        <div class="banner-subtitle">Answers questions from the SRM Admission Brochure 2026-27 &amp; Hostel Circulars — offline by default, AI-powered when you add an API key</div>
+        <div class="banner-subtitle">Conversational AI Assistant for SRM Admission Brochure 2026-27 &amp; Hostel Circulars — powered by local Qwen offline LLM</div>
     </div>
     """,
     unsafe_allow_html=True
@@ -202,10 +202,10 @@ with st.sidebar:
     st.session_state.llm_model = llm_model.strip()
 
     if llm_configured({"api_key": st.session_state.llm_api_key}):
-        st.success("✨ **LLM mode active** — answers are written by the AI model.")
+        st.success("✨ **External API active** — answers are written by the remote model.")
     else:
-        st.info("⚡ **Offline mode** — answers are composed locally from the brochure text. "
-                "Add an API key above to enable AI-written answers.")
+        st.info("⚡ **Offline Local LLM active** — answers are written by your local Qwen model. "
+                "Add an API key above to switch to a remote API model.")
 
     st.markdown("---")
     st.info(
@@ -251,7 +251,8 @@ if prompt := st.chat_input("Ask a doubt about the SRM brochure... (e.g. What are
                 answer = smalltalk
                 retrieved = []
             else:
-                retrieved = engine.search(prompt, top_k=8)
+                is_broad = any(w in prompt.lower() for w in ["all", "list", "every", "complete", "what are the pg", "what are the ug", "what are pg", "what are ug", "pg programs", "ug programs"])
+                retrieved = engine.search(prompt, top_k=15 if is_broad else 8)
 
             if not smalltalk and (not retrieved or retrieved[0]["score"] < MIN_SCORE):
                 answer = (
@@ -269,6 +270,7 @@ if prompt := st.chat_input("Ask a doubt about the SRM brochure... (e.g. What are
                         "base_url": st.session_state.llm_base_url,
                         "model": st.session_state.llm_model,
                     },
+                    chat_history=st.session_state.chat_history
                 )
 
             st.write(answer)
