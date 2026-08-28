@@ -302,9 +302,8 @@ def _extract_placement_answer(query, results):
 
 
 _HOSTEL_QUERY_RE = re.compile(
-    r'hostel\s+fee|hostel\s+charge|hostel\s+cost|hostel\s+price|'
-    r'room\s+fee|accommodation\s+fee|hostel\s+rates|how\s+much.*hostel|'
-    r'hostel.*how\s+much|hostel.*cost|hostel.*price|fees\+.*hostel'
+    r'hostel|room\s+fee|accommodation\s+fee|room\s+rent',
+    re.IGNORECASE
 )
 
 
@@ -361,6 +360,38 @@ def _extract_hostel_answer(query, results):
     """Answer hostel fee queries by collecting curated hostel fee chunks."""
     if not _HOSTEL_QUERY_RE.search(query.lower()):
         return None
+
+    # Check if a specific hostel name is mentioned in the query
+    hostel_words = [w for w in re.findall(r'\b[a-zA-Z]+\b', query.lower()) 
+                    if w not in ["what", "is", "the", "fees", "of", "boys", "girls", "hostel", "accommodation", "room", "sharing", "rates"]]
+    if hostel_words:
+        matched_in_chunks = False
+        for word in hostel_words:
+            for res in results:
+                if word in res["chunk"]["text"].lower():
+                    matched_in_chunks = True
+                    break
+            if matched_in_chunks:
+                break
+        
+        if not matched_in_chunks:
+            potential_names = [w for w in hostel_words if w not in ["srm", "srmist", "campus", "kattankulathur", "fees", "fee"]]
+            if potential_names:
+                name_cap = " ".join([w.capitalize() for w in potential_names])
+                return (
+                    f"I couldn't find the fees for **{name_cap} Hostel** in the provided SRM circulars.\n\n"
+                    "The available circulars only list fees for these boys hostels:\n"
+                    "- **Pierre Fauchard (PF)**\n"
+                    "- **N Block**\n"
+                    "- **Green Pearl (off-campus)**\n"
+                    "- **Adhiyaman**\n"
+                    "- **Oori**\n"
+                    "- **Kaari**\n"
+                    "- **Nelson Mandela**\n"
+                    "- **Sannasi**\n"
+                    "- **JA Block 2 (off-campus)**"
+                )
+
     hostel_chunks = []
     for res in results:
         chunk = res["chunk"]
