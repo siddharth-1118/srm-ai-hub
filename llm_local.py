@@ -6,6 +6,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 _LOCAL_PIPELINE = None
 _LOCAL_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 
+def is_running_on_streamlit_cloud():
+    """Detect if running on Streamlit Community Cloud hosted environment."""
+    return (
+        os.environ.get("STREAMLIT_RUNTIME_IS_SHARING_CONNECTED") == "True"
+        or "STREAMLIT_SHARING_AUTHOR_KEY" in os.environ
+    )
+
 def load_local_model():
     """Lazy load the local LLM model and tokenizer."""
     global _LOCAL_PIPELINE
@@ -87,6 +94,9 @@ def format_btech_programs():
 
 def generate_local_answer(question, results, chat_history):
     """Generates an answer using the local Qwen model using the requested prompt template."""
+    if is_running_on_streamlit_cloud():
+        return None
+        
     generator = load_local_model()
     
     # Dynamic Context Injection for listing queries

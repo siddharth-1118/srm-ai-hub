@@ -4,6 +4,7 @@ import streamlit as st
 
 from answer_engine import generate_answer, handle_smalltalk, llm_configured
 from rag_engine import RAGEngine
+from llm_local import is_running_on_streamlit_cloud
 
 # 1. Custom CSS Styling for Premium Aesthetics
 st.set_page_config(
@@ -201,7 +202,9 @@ with st.sidebar:
     st.session_state.llm_base_url = llm_base.strip()
     st.session_state.llm_model = llm_model.strip()
 
-    if llm_configured({"api_key": st.session_state.llm_api_key}):
+    if is_running_on_streamlit_cloud():
+        st.info("☁️ **Cloud Mode Active** — To respect Streamlit Cloud's 1GB RAM limit, the local LLM is deactivated. Answers are generated instantly by the brochure parser. Add an API Key above to enable conversational AI.")
+    elif llm_configured({"api_key": st.session_state.llm_api_key}):
         st.success("✨ **External API active** — answers are written by the remote model.")
     else:
         st.info("⚡ **Offline Local LLM active** — answers are written by your local Qwen model. "
