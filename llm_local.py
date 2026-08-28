@@ -5,10 +5,24 @@ _LOCAL_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 
 def is_running_on_streamlit_cloud():
     """Detect if running on Streamlit Community Cloud hosted environment."""
-    return (
+    # 1. Path-based detection
+    if os.path.abspath(__file__).startswith("/mount/src"):
+        return True
+    # 2. Env var detection
+    if (
         os.environ.get("STREAMLIT_RUNTIME_IS_SHARING_CONNECTED") == "True"
         or "STREAMLIT_SHARING_AUTHOR_KEY" in os.environ
-    )
+    ):
+        return True
+    # 3. Memory-based detection (Streamlit Cloud has 1GB RAM, developer laptops have >= 8GB)
+    try:
+        import psutil
+        total_ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+        if total_ram_gb < 4.0:
+            return True
+    except Exception:
+        pass
+    return False
 
 def load_local_model():
     """Lazy load the local LLM model and tokenizer."""
