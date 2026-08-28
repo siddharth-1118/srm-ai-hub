@@ -1,7 +1,4 @@
 import os
-import torch
-torch.set_num_threads(4)
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 _LOCAL_PIPELINE = None
 _LOCAL_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -18,6 +15,10 @@ def load_local_model():
     global _LOCAL_PIPELINE
     if _LOCAL_PIPELINE is not None:
         return _LOCAL_PIPELINE
+
+    import torch
+    torch.set_num_threads(4)
+    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Loading local tokenizer and model '{_LOCAL_MODEL_NAME}' on {device}...")
