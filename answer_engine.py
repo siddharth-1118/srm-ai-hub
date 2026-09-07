@@ -593,28 +593,111 @@ def handle_smalltalk(query):
 
 
 # ---------------------------------------------------------------------------
-# Optional LLM generation (OpenAI-compatible chat completions)
+# Optional LLM generation (Gemini, Groq, OpenAI, OpenRouter)
 # ---------------------------------------------------------------------------
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
 
 
+def compare_programs(program_a, program_b, engine):
+    """Generate a side-by-side comparison matrix for two SRMIST programs."""
+    res_a = engine.search(f"{program_a} eligibility degree duration specialisations", top_k=5)
+    res_b = engine.search(f"{program_b} eligibility degree duration specialisations", top_k=5)
+    
+    text_a = " ".join([r["chunk"]["text"] for r in res_a])
+    text_b = " ".join([r["chunk"]["text"] for r in res_b])
+    
+    return (
+        f"## ⚖️ Program Comparison: {program_a.upper()} vs {program_b.upper()}\n\n"
+        f"| Feature / Metric | **{program_a.title()}** | **{program_b.title()}** |\n"
+        f"|---|---|---|\n"
+        f"| **Degree Category** | Undergraduate / Postgraduate | Undergraduate / Postgraduate |\n"
+        f"| **Target Discipline** | {program_a.title()} Specialisation | {program_b.title()} Specialisation |\n"
+        f"| **Primary Campus** | Kattankulathur / Ramapuram / Vadapalani | Kattankulathur / Ramapuram / Vadapalani |\n"
+        f"| **Entrance Exam** | SRMJEEE / SRMJEEH / National Test | SRMJEEE / SRMJEEH / National Test |\n"
+        f"| **Key Highlights** | Industry Curriculum, Lab Practice | Research Focus, Multi-disciplinary |\n\n"
+        f"### 📌 Information for {program_a.title()}\n"
+        f"{text_a[:350]}...\n\n"
+        f"### 📌 Information for {program_b.title()}\n"
+        f"{text_b[:350]}...\n"
+    )
+
+
+def find_eligible_programs(stream, percentage, degree_type, engine):
+    """Filter SRMIST programs based on student stream, percentage, and degree preference."""
+    stream = (stream or "PCM").upper()
+    try:
+        pct_val = float(percentage)
+    except Exception:
+        pct_val = 60.0
+    degree_type = (degree_type or "UG").upper()
+    
+    eligible = []
+    
+    if degree_type == "UG":
+        if "PCM" in stream or "PHYSICS" in stream or "COMPUTER" in stream:
+            eligible.append(("B.Tech Computer Science and Engineering (CSE)", "55% - 60% in PCM", "SRMJEEE / Direct", "Kattankulathur, Ramapuram, Vadapalani, Ghaziabad"))
+            eligible.append(("B.Tech Artificial Intelligence & Machine Learning", "55% - 60% in PCM", "SRMJEEE", "Kattankulathur, Ramapuram"))
+            eligible.append(("B.Tech Electronics & Communication (ECE)", "50% - 60% in PCM", "SRMJEEE", "Kattankulathur, Ramapuram, Vadapalani"))
+            eligible.append(("B.Tech Mechanical Engineering / Robotics", "50% in PCM", "SRMJEEE", "Kattankulathur, Vadapalani"))
+            eligible.append(("B.Arch (Architecture - 5 Years)", "50% in PCM + NATA", "NATA Score", "Kattankulathur"))
+            eligible.append(("B.Sc Computer Science / IT / Data Science", "50% in Class 12", "Merit Based", "Kattankulathur, Ramapuram"))
+        elif "PCB" in stream or "BIOLOGY" in stream:
+            eligible.append(("B.Tech Biotechnology / Biomedical / Genetic Engg", "50% - 60% in PCB/PCM", "SRMJEEE / Direct", "Kattankulathur"))
+            eligible.append(("MBBS / BDS (Medicine & Dental)", "50% in PCB + NEET", "NEET UG", "Kattankulathur Health Sciences"))
+            eligible.append(("B.Sc Nursing / BPT (Physiotherapy)", "45% - 50% in PCB", "SRMJEEH / Merit", "Kattankulathur"))
+            eligible.append(("B.Pharm (Pharmacy - 4 Years)", "50% in PCB/PCM", "SRMJEEH", "Kattankulathur"))
+            eligible.append(("B.Sc Allied Health Sciences (Cardiac, Anaesthesia)", "50% in PCB", "Merit Based", "Kattankulathur"))
+        else: # COMMERCE / ARTS / OTHER
+            eligible.append(("BBA (Bachelor of Business Administration)", "50% in Class 12", "Merit / Interview", "Kattankulathur, Ramapuram, Vadapalani"))
+            eligible.append(("B.Com (General, Honors, Accounting & Finance)", "50% in Class 12", "Merit Based", "Kattankulathur, Ramapuram"))
+            eligible.append(("BA LL.B (Hons) / BBA LL.B (Hons) - 5 Years", "45% in Class 12", "SRMJEEL / CLAT", "Kattankulathur"))
+            eligible.append(("B.Des (Design / Interior / Fashion)", "50% in Class 12", "Portfolio / Interview", "Kattankulathur"))
+
+    else: # PG
+        eligible.append(("M.Tech Computer Science / AI / VLSI / Bio", "50% in B.E/B.Tech", "SRMJEEE (PG) / GATE", "Kattankulathur"))
+        eligible.append(("MBA (Master of Business Administration)", "50% in Graduation", "SRMJEEM / CAT / MAT / TANCET", "Kattankulathur, Ramapuram, Vadapalani"))
+        eligible.append(("M.Sc Medical Anatomy / Physiology / Biochemistry", "50% in B.Sc Bio", "SRMJEEH", "Kattankulathur"))
+        eligible.append(("LL.M (Master of Laws - 1 Year)", "50% in LL.B", "SRMJEEL", "Kattankulathur"))
+        eligible.append(("M.Pharm / Pharm.D", "55% in B.Pharm", "GPAT / SRMJEEH", "Kattankulathur"))
+
+    lines = [
+        f"### 🎯 SRMIST Program Eligibility & Recommendation Engine",
+        f"**Filtered Stream**: `{stream}` | **Student Score**: `{pct_val}%` | **Degree Level**: `{degree_type}`\n",
+        "| Recommended Program | Required Eligibility | Admission / Entrance Exam | Campus Locations |",
+        "|---|---|---|---|",
+    ]
+    for prog, req, exam, campus in eligible:
+        lines.append(f"| **{prog}** | {req} | {exam} | {campus} |")
+        
+    lines.append("\n> [!TIP]\n> *Admissions Helpline*: **080-6908 7000** | Apply Online: `https://applications.srmist.edu.in`")
+    return "\n".join(lines)
+
+
 def llm_configured(config=None):
     """True when an API key is available (sidebar config or env var)."""
     if config and config.get("api_key"):
         return True
-    return bool(os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    return bool(
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GROQ_API_KEY")
+        or os.environ.get("LLM_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+    )
 
 
 def llm_answer(query, results, config=None, timeout=60):
-    """Generate a grounded answer from the retrieved chunks via chat API."""
-    api_key = (config or {}).get("api_key") or \
+    """Generate a grounded answer from the retrieved chunks via cloud LLM API."""
+    config = config or {}
+    provider = config.get("provider") or (
+        "groq" if os.environ.get("GROQ_API_KEY") else (
+            "gemini" if os.environ.get("GEMINI_API_KEY") else "openai"
+        )
+    )
+    api_key = config.get("api_key") or os.environ.get(f"{provider.upper()}_API_KEY") or \
         os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    base_url = (config or {}).get("base_url") or \
-        os.environ.get("LLM_BASE_URL", DEFAULT_BASE_URL)
-    model = (config or {}).get("model") or \
-        os.environ.get("LLM_MODEL", DEFAULT_MODEL)
+    model = config.get("model")
 
     context = "\n\n".join(
         f"[Excerpt {i + 1} — Page {r['chunk']['page']}]\n{r['chunk']['text']}"
@@ -628,32 +711,27 @@ def llm_answer(query, results, config=None, timeout=60):
         "answer, say so honestly and suggest where to check. Do not invent "
         "facts. Mention the page number in parentheses when you use an excerpt."
     )
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": f"Brochure excerpts:\n\n{context}\n\nQuestion: {query}",
-            },
-        ],
-        "temperature": 0.2,
-        "max_tokens": 500,
-    }
-    req = urllib.request.Request(
-        f"{base_url.rstrip('/')}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
+    messages = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": f"Brochure excerpts:\n\n{context}\n\nQuestion: {query}",
         },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    return data["choices"][0]["message"]["content"].strip()
+    ]
+
+    from llm_local import call_remote_llm_api
+    return call_remote_llm_api(provider=provider, api_key=api_key, model=model, messages=messages)
+
 
 def generate_answer(query, results, engine, config=None, chat_history=None):
+    # Contextualize follow-up questions if chat history exists
+    if chat_history:
+        try:
+            from llm_local import contextualize_query
+            query = contextualize_query(query, chat_history, config)
+        except Exception:
+            pass
+
     # Run targeted extractors first for exact rendering (e.g. hostel fee tables, placement stats)
     for extractor in (_extract_phone_answer, _extract_placement_answer, _extract_hostel_answer):
         ans = extractor(query, results)

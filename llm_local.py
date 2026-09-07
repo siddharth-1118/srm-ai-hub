@@ -317,3 +317,151 @@ def generate_local_answer(question, results, chat_history):
         response = generated_text[len(prompt):].strip()
         
     return response
+
+
+def call_remote_llm_api(provider, api_key, model, messages, temperature=0.2, max_tokens=1024):
+    """Call cloud LLM APIs (Gemini, Groq, OpenAI, OpenRouter) using standard urllib."""
+    import json
+    import urllib.request
+    import urllib.error
+
+    provider = (provider or "").lower().strip()
+    
+    # 1. Google Gemini API
+    if provider in ["gemini", "google"]:
+        model_name = model or "gemini-2.0-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        
+        system_text = ""
+        user_parts = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role == "system":
+                system_text += content + "\n\n"
+            else:
+                user_parts.append(f"{role.upper()}: {content}")
+        
+        combined_prompt = (system_text + "\n".join(user_parts)).strip()
+        
+        payload = {
+            "contents": [
+                {
+                    "parts": [{"text": combined_prompt}]
+                }
+            ],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens
+            }
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+        
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except Exception as e:
+            raise RuntimeError(f"Gemini API Error: {str(e)}")
+
+    # 2. Groq / OpenAI / OpenRouter API (OpenAI Compatible)
+    if provider in ["groq", "openai", "openrouter"]:
+        if provider == "groq":
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            model_name = model or "llama-3.3-70b-versatile"
+        elif provider == "openrouter":
+            url = "https://openrouter.ai/api/v1/chat/completions"
+            model_name = model or "meta-llama/llama-3.3-70b-instruct:free"
+        else:
+            url = "https://api.openai.com/v1/chat/completions"
+            model_name = model or "gpt-4o-mini"
+            
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        if provider == "openrouter":
+            headers["HTTP-Referer"] = "https://srm-ai-app.streamlit.app"
+            headers["X-Title"] = "SRM Admissions AI"
+            
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+        
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            raise RuntimeError(f"{provider.capitalize()} API Error: {str(e)}")
+            
+    raise ValueError(f"Unsupported LLM provider: {provider}")
+
+
+def contextualize_query(question, chat_history, config=None):
+    """Reformulate follow-up questions into standalone search queries using conversation context."""
+    import re
+    if not chat_history or len(chat_history) < 2:
+        return question
+
+    question_lower = question.lower().strip()
+    pronouns = ["it", "its", "this", "that", "there", "these", "those", "they", "them", "here", "the course", "the fee", "this program", "this hostel"]
+    
+    has_pronoun = any(re.search(r'\b' + re.escape(p) + r'\b', question_lower) for p in pronouns)
+    is_brief = len(question.split()) <= 6 and ("fee" in question_lower or "cost" in question_lower or "where" in question_lower or "eligibility" in question_lower or "how to apply" in question_lower)
+    
+    if not (has_pronoun or is_brief):
+        return question
+
+    last_user_msg = ""
+    last_assistant_msg = ""
+    for msg in reversed(chat_history[-4:]):
+        role = msg.get("role")
+        content = msg.get("content", "")
+        if role == "user" and not last_user_msg:
+            last_user_msg = content
+        elif role == "assistant" and not last_assistant_msg:
+            last_assistant_msg = content
+            
+    # Try calling remote LLM API if configured
+    if config and config.get("api_key") and config.get("provider"):
+        try:
+            reformulate_prompt = [
+                {"role": "system", "content": "You are a search query contextualizer. Rewrite the user's latest follow-up question into a standalone, detailed search query that incorporates the context of the previous conversation. Output ONLY the rewritten standalone question and nothing else."},
+                {"role": "user", "content": f"Previous topic: {last_user_msg}\nLatest question: {question}\nStandalone Question:"}
+            ]
+            standalone = call_remote_llm_api(
+                provider=config.get("provider"),
+                api_key=config.get("api_key"),
+                model=config.get("model"),
+                messages=reformulate_prompt,
+                temperature=0.0,
+                max_tokens=64
+            )
+            if standalone and len(standalone) > 5:
+                return standalone.strip('"\' ')
+        except Exception:
+            pass
+
+    # Heuristic contextualization fallback
+    topic_keywords = []
+    for word in re.findall(r'\b[A-Za-z0-9.+#-]+\b', last_user_msg):
+        w_low = word.lower()
+        if w_low not in ["what", "is", "the", "for", "tell", "me", "about", "fees", "fee", "cost", "how", "much", "in", "srm", "srmist"]:
+            topic_keywords.append(word)
+            
+    if topic_keywords:
+        topic_str = " ".join(topic_keywords[:4])
+        for p in [" it ", " this ", " that ", " the course ", " this program "]:
+            if p in f" {question_lower} ":
+                return re.sub(r'\b(it|this|that|the course|this program)\b', topic_str, question, flags=re.IGNORECASE)
+        return f"{question} ({topic_str})"
+        
+    return question

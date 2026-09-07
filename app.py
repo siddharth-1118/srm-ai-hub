@@ -182,106 +182,90 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 🤖 AI Answer Engine")
-    if "llm_api_key" not in st.session_state:
-        st.session_state.llm_api_key = os.environ.get("LLM_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
-    if "llm_base_url" not in st.session_state:
-        st.session_state.llm_base_url = os.environ.get("LLM_BASE_URL") or "https://api.openai.com/v1"
-    if "llm_model" not in st.session_state:
-        st.session_state.llm_model = os.environ.get("LLM_MODEL") or "gpt-4o-mini"
-
-    llm_key = st.text_input(
-        "API Key (optional)",
-        value=st.session_state.llm_api_key,
-        type="password",
-        placeholder="sk-...",
-        help="Leave empty to use the offline answer engine. Works with any OpenAI-compatible API (OpenAI, Groq, OpenRouter, Ollama...).",
+    provider_choice = st.selectbox(
+        "AI Provider",
+        options=["Free Cloud Heuristic", "Google Gemini (Free API Key)", "Groq (Ultra-Fast Llama 3.3)", "OpenAI / Custom API", "Local Qwen (Offline)"],
+        index=0 if is_running_on_streamlit_cloud() else 4
     )
-    llm_base = st.text_input("API Base URL", value=st.session_state.llm_base_url)
-    llm_model = st.text_input("Model", value=st.session_state.llm_model)
-    st.session_state.llm_api_key = llm_key.strip()
-    st.session_state.llm_base_url = llm_base.strip()
-    st.session_state.llm_model = llm_model.strip()
 
-    if is_running_on_streamlit_cloud():
-        st.info("☁️ **Cloud Mode Active** — To respect Streamlit Cloud's 1GB RAM limit, the local LLM is deactivated. Answers are generated instantly by the brochure parser. Add an API Key above to enable conversational AI.")
-    elif llm_configured({"api_key": st.session_state.llm_api_key}):
-        st.success("✨ **External API active** — answers are written by the remote model.")
+    if provider_choice == "Google Gemini (Free API Key)":
+        provider_name = "gemini"
+        default_model = "gemini-2.0-flash"
+    elif provider_choice == "Groq (Ultra-Fast Llama 3.3)":
+        provider_name = "groq"
+        default_model = "llama-3.3-70b-versatile"
+    elif provider_choice == "OpenAI / Custom API":
+        provider_name = "openai"
+        default_model = "gpt-4o-mini"
     else:
-        st.info("⚡ **Offline Local LLM active** — answers are written by your local Qwen model. "
-                "Add an API key above to switch to a remote API model.")
+        provider_name = "local"
+        default_model = "Qwen2.5-0.5B"
+
+    if provider_name != "local" and provider_choice != "Free Cloud Heuristic":
+        api_key_input = st.text_input(
+            f"{provider_choice} Key",
+            value=os.environ.get(f"{provider_name.upper()}_API_KEY", ""),
+            type="password",
+            placeholder="Paste API Key here...",
+        )
+        st.session_state.llm_config = {
+            "provider": provider_name,
+            "api_key": api_key_input.strip(),
+            "model": default_model
+        }
+    else:
+        st.session_state.llm_config = None
+
+    if is_running_on_streamlit_cloud() and not st.session_state.llm_config:
+        st.info("☁️ **Cloud Mode Active** — Answers generated instantly by brochure parser. Add a free Gemini/Groq API key above to enable conversational AI.")
+    elif st.session_state.llm_config and st.session_state.llm_config.get("api_key"):
+        st.success(f"✨ **{provider_choice} Active** — powered by remote model.")
+    else:
+        st.info("⚡ **Offline Local LLM Active** — powered by local Qwen model.")
 
     st.markdown("---")
     st.info(
-        "Answers are grounded in the **SRM Admission Brochure 2026-27** and "
-        "**hostel circulars/fee structures**. The retrieval engine (TF-IDF + "
-        "keyword search) finds the relevant sections, and the answer engine "
-        "composes a direct reply from them."
+        "Grounded in **SRM Admission Brochure 2026-27** and **hostel circulars**."
     )
 
-# 5. Chat History Display
-for msg in st.session_state.chat_history:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
+# 5. Main Multi-Tab Layout
+tab_chat, tab_wizard, tab_compare = st.tabs([
+    "💬 AI Admissions Assistant",
+    "🎯 Program Eligibility Wizard",
+    "⚖️ AI Course Comparer"
+])
 
-        # Display sources if present
-        if msg["role"] == "assistant" and "sources" in msg and msg["sources"]:
-            with st.expander("🔍 View References"):
-                for s_idx, src in enumerate(msg["sources"]):
-                    chunk = src["chunk"]
-                    score = src["score"]
-                    st.markdown(
-                        f"**Source {s_idx+1} ({chunk['doc_title']}, Page {chunk['page']})** | "
-                        f"Similarity Score: `{score:.3f}`\n"
-                        f"> {chunk['text']}\n"
-                        f"---"
-                    )
+# ---------------------------------------------------------------------------
+# TAB 1: AI Admissions Assistant Chat
+# ---------------------------------------------------------------------------
+with tab_chat:
+    st.caption("Ask questions, explore course details, check fee structures, or click quick suggestions below.")
 
-# 6. User Chat Input and Query Execution
-if prompt := st.chat_input("Ask a doubt about the SRM brochure... (e.g. What are the B.Tech programs?)"):
-    # Display user query
-    with st.chat_message("user"):
-        st.write(prompt)
+    # Quick Suggestion Pills
+    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+    suggested_prompt = None
+    if col_p1.button("🎓 B.Tech Majors 2026"):
+        suggested_prompt = "What are the B.Tech programs available at SRM?"
+    if col_p2.button("🏢 Boys Hostel Fees"):
+        suggested_prompt = "First Year Boys Hostel Fees"
+    if col_p3.button("📊 Placement Stats"):
+        suggested_prompt = "What are the highest placement packages and total offers?"
+    if col_p4.button("📞 Helpline Number"):
+        suggested_prompt = "What is the admission helpline phone number?"
 
-    # Store query in session history
-    st.session_state.chat_history.append({"role": "user", "content": prompt})
+    # Audio input for voice queries
+    audio_val = None
+    if hasattr(st, "audio_input"):
+        with st.expander("🎙️ Speak your Question (Voice Input)"):
+            audio_val = st.audio_input("Record your question")
 
-    # Generate response
-    with st.chat_message("assistant"):
-        with st.spinner("Searching brochure and composing your answer..."):
-            smalltalk = handle_smalltalk(prompt)
-            engine = st.session_state.rag_engine
-            if smalltalk:
-                answer = smalltalk
-                retrieved = []
-            else:
-                is_broad = any(w in prompt.lower() for w in ["all", "list", "every", "complete", "what are the pg", "what are the ug", "what are pg", "what are ug", "pg programs", "ug programs"])
-                retrieved = engine.search(prompt, top_k=15 if is_broad else 8)
-
-            if not smalltalk and (not retrieved or retrieved[0]["score"] < MIN_SCORE):
-                answer = (
-                    "I couldn't find any relevant details in the brochure regarding your question. "
-                    "Try asking about programs, entrance exams, scholarships, placements, or contact details."
-                )
-                retrieved = []
-            elif not smalltalk:
-                answer, _ = generate_answer(
-                    prompt,
-                    retrieved,
-                    engine,
-                    {
-                        "api_key": st.session_state.llm_api_key,
-                        "base_url": st.session_state.llm_base_url,
-                        "model": st.session_state.llm_model,
-                    },
-                    chat_history=st.session_state.chat_history
-                )
-
-            st.write(answer)
-
-            # Display references
-            if retrieved:
+    # Render conversation history
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+            if msg["role"] == "assistant" and "sources" in msg and msg["sources"]:
                 with st.expander("🔍 View References"):
-                    for s_idx, src in enumerate(retrieved):
+                    for s_idx, src in enumerate(msg["sources"]):
                         chunk = src["chunk"]
                         score = src["score"]
                         st.markdown(
@@ -291,12 +275,108 @@ if prompt := st.chat_input("Ask a doubt about the SRM brochure... (e.g. What are
                             f"---"
                         )
 
-            # Store assistant response and its source metadata in session history
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": answer,
-                "sources": retrieved
-            })
+    # Determine input query (from chat_input or suggested button)
+    prompt = st.chat_input("Ask a doubt about SRM admissions...") or suggested_prompt
+
+    if prompt:
+        with st.chat_message("user"):
+            st.write(prompt)
+
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+
+        with st.chat_message("assistant"):
+            with st.spinner("Searching brochure and generating response..."):
+                smalltalk = handle_smalltalk(prompt)
+                engine = st.session_state.rag_engine
+                if smalltalk:
+                    answer = smalltalk
+                    retrieved = []
+                else:
+                    is_broad = any(w in prompt.lower() for w in ["all", "list", "every", "complete", "what are the pg", "what are the ug"])
+                    retrieved = engine.search(prompt, top_k=15 if is_broad else 8)
+
+                if not smalltalk and (not retrieved or retrieved[0]["score"] < MIN_SCORE):
+                    answer = (
+                        "I couldn't find relevant details in the brochure regarding your question. "
+                        "Try asking about programs, entrance exams, scholarships, placements, or contact details."
+                    )
+                    retrieved = []
+                elif not smalltalk:
+                    answer, _ = generate_answer(
+                        prompt,
+                        retrieved,
+                        engine,
+                        st.session_state.llm_config,
+                        chat_history=st.session_state.chat_history
+                    )
+
+                st.write(answer)
+
+                if retrieved:
+                    with st.expander("🔍 View References"):
+                        for s_idx, src in enumerate(retrieved):
+                            chunk = src["chunk"]
+                            score = src["score"]
+                            st.markdown(
+                                f"**Source {s_idx+1} ({chunk['doc_title']}, Page {chunk['page']})** | "
+                                f"Similarity Score: `{score:.3f}`\n"
+                                f"> {chunk['text']}\n"
+                                f"---"
+                            )
+
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": answer,
+                    "sources": retrieved
+                })
+
+    # Download Chat History as Markdown
+    if st.session_state.chat_history:
+        chat_text = "\n\n".join([f"**{m['role'].upper()}**: {m['content']}" for m in st.session_state.chat_history])
+        st.download_button("📥 Export Conversation Transcript", data=chat_text, file_name="srm_admissions_chat.md", mime="text/markdown")
+
+
+# ---------------------------------------------------------------------------
+# TAB 2: AI Program Eligibility & Course Finder Wizard
+# ---------------------------------------------------------------------------
+with tab_wizard:
+    st.subheader("🎯 Find Eligible SRMIST Programs")
+    st.caption("Select your academic stream, score, and target level to view recommended programs, entrance exams, and campuses.")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        user_stream = st.selectbox("Class 12 / UG Stream", ["PCM (Physics, Chem, Math)", "PCB (Physics, Chem, Bio)", "Commerce / Economics", "Arts / Humanities / Other"])
+    with col2:
+        user_score = st.slider("Aggregate Score (%)", min_value=40, max_value=100, value=75)
+    with col3:
+        user_degree = st.selectbox("Target Degree Level", ["UG (B.Tech, BBA, MBBS, B.Sc)", "PG (M.Tech, MBA, M.Sc, LL.M)"])
+
+    if st.button("🔍 Check Eligible Programs", key="btn_eligibility"):
+        engine = st.session_state.rag_engine
+        level_code = "UG" if "UG" in user_degree else "PG"
+        report = find_eligible_programs(user_stream, user_score, level_code, engine)
+        st.markdown(report)
+
+
+# ---------------------------------------------------------------------------
+# TAB 3: AI Course Comparer
+# ---------------------------------------------------------------------------
+with tab_compare:
+    st.subheader("⚖️ Compare SRMIST Degree Programs Side-by-Side")
+    st.caption("Enter or select any two degree programs to generate an instant side-by-side comparison matrix.")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        prog_a = st.text_input("Program A", value="B.Tech Computer Science and Engineering")
+    with col_b:
+        prog_b = st.text_input("Program B", value="B.Tech Electronics and Communication Engineering")
+
+    if st.button("⚖️ Compare Programs", key="btn_compare"):
+        engine = st.session_state.rag_engine
+        with st.spinner(f"Comparing {prog_a} vs {prog_b}..."):
+            comp_report = compare_programs(prog_a, prog_b, engine)
+            st.markdown(comp_report)
+
 
             # Re-run page to refresh layout nicely
             st.rerun()
