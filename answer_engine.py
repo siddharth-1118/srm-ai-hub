@@ -311,13 +311,14 @@ def _extract_phone_answer(query, results):
 
 
 _DEPT_RE = re.compile(r'\b(ece|eee|cse|it|mech|mechanical|civil|biotech|biotechnology|food|process|arch|architecture|law|mgt|management|nursing|pharmacy)\b', re.IGNORECASE)
+_TRAINING_RE = re.compile(r'\b(train|training|traininig|preparation|coaching|cdc|career|development|skill|skills|workshop)\b', re.IGNORECASE)
 
 
 def _extract_placement_answer(query, results):
     """Answer placement queries with the brochure's placement statistics."""
     if not _PLACEMENT_QUERY_RE.search(query.lower()):
         return None
-    if _DEPT_RE.search(query.lower()):
+    if _DEPT_RE.search(query.lower()) or _TRAINING_RE.search(query.lower()):
         return None
     for res in results:
         text = res["chunk"]["text"]
