@@ -184,8 +184,8 @@ with st.sidebar:
     st.markdown("### 🤖 AI Answer Engine")
     provider_choice = st.selectbox(
         "AI Provider",
-        options=["Free Cloud Heuristic", "Google Gemini (Free API Key)", "Groq (Ultra-Fast Llama 3.3)", "OpenAI / Custom API", "Local Qwen (Offline)"],
-        index=0 if is_running_on_streamlit_cloud() else 4
+        options=["Local Smart AI (Offline & Deployment Ready)", "Google Gemini (Free API Key)", "Groq (Ultra-Fast Llama 3.3)", "OpenAI / Custom API", "Local Qwen (PyTorch Model)"],
+        index=0
     )
 
     if provider_choice == "Google Gemini (Free API Key)":
@@ -197,11 +197,14 @@ with st.sidebar:
     elif provider_choice == "OpenAI / Custom API":
         provider_name = "openai"
         default_model = "gpt-4o-mini"
-    else:
+    elif provider_choice == "Local Qwen (PyTorch Model)":
         provider_name = "local"
         default_model = "Qwen2.5-0.5B"
+    else:
+        provider_name = "local_smart"
+        default_model = "smart_heuristic"
 
-    if provider_name != "local" and provider_choice != "Free Cloud Heuristic":
+    if provider_name not in ("local", "local_smart"):
         api_key_input = st.text_input(
             f"{provider_choice} Key",
             value=os.environ.get(f"{provider_name.upper()}_API_KEY", ""),
@@ -216,16 +219,16 @@ with st.sidebar:
     else:
         st.session_state.llm_config = None
 
-    if is_running_on_streamlit_cloud() and not st.session_state.llm_config:
-        st.info("☁️ **Cloud Mode Active** — Answers generated instantly by brochure parser. Add a free Gemini/Groq API key above to enable conversational AI.")
-    elif st.session_state.llm_config and st.session_state.llm_config.get("api_key"):
+    if st.session_state.llm_config and st.session_state.llm_config.get("api_key"):
         st.success(f"✨ **{provider_choice} Active** — powered by remote model.")
+    elif provider_choice == "Local Qwen (PyTorch Model)":
+        st.info("⚡ **Offline Local Qwen Model Active**.")
     else:
-        st.info("⚡ **Offline Local LLM Active** — powered by local Qwen model.")
+        st.info("⚡ **Local Smart AI Active** — powered by offline AI synthesis over all indexed PDFs. Works 100% locally and on Streamlit Cloud without API keys!")
 
     st.markdown("---")
     st.info(
-        "Grounded in **SRM Admission Brochure 2026-27** and **hostel circulars**."
+        "Grounded in **all PDF documents** (Brochures, Placement Reports, Recruiter Lists, Schedules & Hostel Circulars)."
     )
 
 # 5. Main Multi-Tab Layout

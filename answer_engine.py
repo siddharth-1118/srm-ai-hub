@@ -25,7 +25,11 @@ import urllib.request
 
 # Protect abbreviations before splitting so "B.Tech", "M.Sc", "Ph.D", "e.g."
 # are not broken into separate "sentences".
-_ABBREV_PROTECT = re.compile(r'\b([A-Za-z])\.(?=\S)')
+_ABBREV_PROTECT = re.compile(
+    r'\b([A-Za-z])\.(?=\S)|'
+    r'\b(Ms|Mr|Mrs|Dr|Prof|Pvt|Ltd|Inc|Corp|No|SNo|Vol|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.(?=\s|[A-Z0-9])',
+    re.IGNORECASE
+)
 _SENT_SPLIT = re.compile(r'(?<=[.!?])\s+(?=[A-Z0-9])')
 _PHONE_RE = re.compile(r'\b0\d{2}\s*-\s*\d{4}\s*\d{4}\b')
 
@@ -195,16 +199,21 @@ def _score_sentence_weighted(sentence, tokens, weights):
     return total
 
 
-def _compose_fact_answer(query, results, engine, max_sentences=3):
-    """Compose a factual answer from the best matching sentences.
-
-    Hand-curated chunks (the FAQ/ground-truth entries) always win over raw
-    PDF text: if any curated sentence matches the question, only curated
-    sentences are used, ranked by rarity-weighted query overlap.
-    """
+def _compose_fact_answer(query, results, engine, max_sentences=4):
+    """Compose a conversational factual AI answer from the best matching sentences across top retrieved PDFs."""
     tokens = engine._query_tokens(query)
     weights = _token_weights(tokens, engine.chunks)
     specific = [t for t in tokens if t not in _GENERIC_TOKENS]
+
+    if results:
+        top_score = results[0]["score"]
+        top_doc_id = results[0]["chunk"]["doc_id"]
+        filtered_results = [
+            res for res in results
+            if res["chunk"]["doc_id"] == top_doc_id or res["score"] >= 0.85 * top_score
+        ]
+    else:
+        filtered_results = results
 
     def _meaningful(sentence):
         """True unless the sentence matches only generic words."""
@@ -213,38 +222,68 @@ def _compose_fact_answer(query, results, engine, max_sentences=3):
         return _score_sentence(sentence, specific) + \
             _score_sentence(sentence, [t for t in tokens if t in _GENERIC_TOKENS]) >= 2
 
-    curated_cands, raw_cands = [], []
-    for rank, res in enumerate(results):
+    all_cands = []
+    for rank, res in enumerate(filtered_results):
         chunk = res["chunk"]
+        doc_title = chunk.get("doc_title") or "SRM Document"
+        page = chunk.get("page", 1)
+        doc_title_norm = re.sub(r'[^a-z0-9]+', ' ', doc_title.lower())
+        doc_matched = any(t in doc_title_norm.split() for t in specific if len(t) > 2)
+        doc_boost = 1.6 if doc_matched else (1.3 if rank == 0 else 1.0)
         for s in _split_sentences(chunk["text"]):
             score = _score_sentence_weighted(s, tokens, weights)
             if score <= 0 or not _meaningful(s):
                 continue
-            (curated_cands if chunk.get("curated") else raw_cands).append(
-                (score, rank, s)
-            )
-    candidates = (curated_cands or raw_cands)
-    candidates.sort(key=lambda x: (x[0], -x[1]), reverse=True)
+            rank_weight = max(1.0 - (rank * 0.15), 0.5)
+            boosted = score * rank_weight * doc_boost * (1.1 if chunk.get("curated") else 1.0)
+            all_cands.append((boosted, rank, s, doc_title, page))
+
+    all_cands.sort(key=lambda x: (x[0], -x[1]), reverse=True)
 
     chosen = []
     seen = set()
     seen_phones = set()
-    for _, _, s in candidates:
+    sources_used = []
+
+    for _, _, s, doc_title, page in all_cands:
         key = re.sub(r'[^a-z0-9]', '', s.lower())[:80]
         if key in seen:
             continue
         phone = _phone_dedupe_key(s)
         if phone is not None:
             if phone in seen_phones:
-                continue  # same phone repeated in a second sentence
+                continue
             seen_phones.add(phone)
         seen.add(key)
-        chosen.append(s)
+        chosen.append((s, doc_title, page))
+        sources_used.append(f"{doc_title} (Page {page})")
         if len(chosen) >= max_sentences:
             break
+
+    if not chosen and filtered_results:
+        chunk = filtered_results[0]["chunk"]
+        doc_title = chunk.get("doc_title") or "SRM Document"
+        page = chunk.get("page", 1)
+        return f"According to **{doc_title}**:\n\n{chunk['text']}\n\n📌 **Source**: {doc_title} (Page {page})"
+
     if not chosen:
         return None
-    return " ".join(chosen)
+
+    titles = list(dict.fromkeys([c[1] for c in chosen]))
+    if len(titles) == 1:
+        intro = f"According to the **{titles[0]}**:\n\n"
+    else:
+        intro = "Based on the retrieved SRM documents:\n\n"
+
+    if len(chosen) == 1:
+        body = chosen[0][0]
+    else:
+        body = "\n".join(f"- {c[0]}" for c in chosen)
+
+    unique_sources = list(dict.fromkeys(sources_used))
+    sources_str = f"\n\n📌 **Source**: {', '.join(unique_sources)}"
+
+    return f"{intro}{body}{sources_str}"
 
 
 # ---------------------------------------------------------------------------
@@ -271,9 +310,14 @@ def _extract_phone_answer(query, results):
     return None
 
 
+_DEPT_RE = re.compile(r'\b(ece|eee|cse|it|mech|mechanical|civil|biotech|biotechnology|food|process|arch|architecture|law|mgt|management|nursing|pharmacy)\b', re.IGNORECASE)
+
+
 def _extract_placement_answer(query, results):
     """Answer placement queries with the brochure's placement statistics."""
     if not _PLACEMENT_QUERY_RE.search(query.lower()):
+        return None
+    if _DEPT_RE.search(query.lower()):
         return None
     for res in results:
         text = res["chunk"]["text"]
@@ -486,8 +530,10 @@ def synthesize_answer(query, results, engine):
 
     answer = _compose_fact_answer(query, results, engine)
     if not answer:
-        # Last resort: the single best-matching chunk, cleaned up.
-        answer = results[0]["chunk"]["text"]
+        chunk = results[0]["chunk"]
+        doc_title = chunk.get("doc_title") or "SRM Document"
+        page = chunk.get("page", 1)
+        answer = f"According to **{doc_title}**:\n\n{chunk['text']}\n\n📌 **Source**: {doc_title} (Page {page})"
     return answer
 
 

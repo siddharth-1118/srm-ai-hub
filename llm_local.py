@@ -69,7 +69,8 @@ def format_context(results):
     context_str = ""
     for idx, r in enumerate(results[:8]):
         chunk = r["chunk"]
-        context_str += f"\n[Excerpt {idx+1} — Page {chunk['page']}]\n{chunk['text']}\n"
+        doc_title = chunk.get("doc_title") or "SRM Document"
+        context_str += f"\n[Excerpt {idx+1} — {doc_title}, Page {chunk['page']}]\n{chunk['text']}\n"
     return context_str
 
 def format_chat_history(chat_history):

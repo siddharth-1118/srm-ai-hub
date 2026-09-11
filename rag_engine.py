@@ -71,6 +71,18 @@ STOPWORDS = {
 # Domain synonym expansion: bridges the gap between how students phrase a question
 # and how the brochure spells things ("pg" -> "postgraduate", "btech" -> "b.tech").
 QUERY_SYNONYMS = {
+    "program": "program programme programmes",
+    "programme": "programme program programs",
+    "programs": "programs programme programmes",
+    "programmes": "programmes program programs",
+    "specialization": "specialization specialisation specialisations",
+    "specialisation": "specialisation specialization specializations",
+    "center": "center centre centres",
+    "centre": "centre center centers",
+    "schedule": "schedule schedules timetable timing dates",
+    "induction": "induction deeksharambh orientation inaugural",
+    "placement": "placement placements recruiters package salary job jobs",
+    "placements": "placements placement recruiters package salary job jobs",
     "pg": "pg postgraduate",
     "postgrad": "postgraduate",
     "postgraduate": "postgraduate",
@@ -373,8 +385,8 @@ HOSTEL_FEES_4TH_5TH_YEAR_GIRLS_2026 = [
     "Book at https://sp.srmist.edu.in/srmiststudentportal",
 ]
 
-# Registry of documents in the knowledge base. Add new brochures/posters here.
-DOCUMENTS = [
+# Registry of explicit documents with curated facts. All other .pdf files in the folder are discovered automatically.
+EXPLICIT_DOCUMENTS = [
     {
         "id": "srm-admissions-2026-27",
         "file": PDF_PATH,
@@ -425,6 +437,60 @@ DOCUMENTS = [
         "title": "Hostel Booking Schedule 2023-24 — Senior Students",
     },
 ]
+
+
+def _format_pdf_title(stem: str) -> str:
+    """Format filename stem into a clean, human-readable document title."""
+    s = stem.replace('_', '-').replace('(1)', '').strip()
+    words = [w for w in s.split('-') if w]
+    cap = []
+    for w in words:
+        wl = w.lower()
+        if wl in ('ece', 'eee', 'cet', 'srm', 'srmist', 'btech', 'mtech', 'barch', 'bdes', 'fsh', 'mgt', 'law', 'engg'):
+            if wl == 'engg':
+                cap.append('Engineering')
+            elif wl == 'btech':
+                cap.append('B.Tech')
+            elif wl == 'mtech':
+                cap.append('M.Tech')
+            else:
+                cap.append(w.upper())
+        elif wl in ('and', 'for', 'of', 'to', 'in', 'all', 'the', 'with'):
+            cap.append(wl)
+        elif wl.isdigit():
+            cap.append(wl)
+        else:
+            cap.append(w.capitalize())
+
+    if cap:
+        cap[0] = cap[0].capitalize()
+    
+    title = " ".join(cap)
+    title = re.sub(r'(\b\d{4})\s+(\d{4}\b)', r'(\1-\2)', title)
+    return title
+
+
+def get_all_documents():
+    """Dynamically scan BASE_DIR for all .pdf files, merging explicit and auto-discovered docs."""
+    docs_by_path = {}
+    
+    for doc in EXPLICIT_DOCUMENTS:
+        resolved = Path(doc["file"]).resolve()
+        docs_by_path[resolved] = doc
+
+    for pdf_path in sorted(BASE_DIR.glob("*.pdf")):
+        resolved = pdf_path.resolve()
+        if resolved not in docs_by_path:
+            docs_by_path[resolved] = {
+                "id": pdf_path.stem.lower().replace(" ", "-"),
+                "file": resolved,
+                "title": _format_pdf_title(pdf_path.stem),
+            }
+
+    return list(docs_by_path.values())
+
+
+DOCUMENTS = get_all_documents()
 
 
 class RAGEngine:
@@ -613,11 +679,17 @@ class RAGEngine:
             try:
                 with open(self.index_path, 'rb') as f:
                     data = pickle.load(f)
-                    self.chunks = data["chunks"]
-                    self.vectorizer = data["vectorizer"]
-                    self.tfidf = data["tfidf"]
-                    self.tfidf_norms = data["tfidf_norms"]
-                return
+                    cached_docs = data.get("documents", [])
+                    current_ids = set(d["id"] for d in self.documents)
+                    cached_ids = set(d["id"] for d in cached_docs)
+                    if current_ids == cached_ids:
+                        self.chunks = data["chunks"]
+                        self.vectorizer = data["vectorizer"]
+                        self.tfidf = data["tfidf"]
+                        self.tfidf_norms = data["tfidf_norms"]
+                        return
+                    else:
+                        print(f"Document set changed ({len(cached_ids)} -> {len(current_ids)}). Rebuilding index...")
             except Exception as e:
                 print(f"Failed to load cached index: {e}. Rebuilding...")
 
@@ -695,12 +767,16 @@ class RAGEngine:
         tokens = self._query_tokens(query)
         return sum(1 for t in tokens if t in self.LIST_WORDS) >= 2
 
+    def _base_query_tokens(self, query):
+        """Stopword-filtered query tokens without synonym expansion."""
+        return [
+            t for t in re.sub(r'[^a-z0-9 ]', '', query.lower()).split()
+            if t not in STOPWORDS and len(t) >= 2
+        ]
+
     def _query_tokens(self, query):
         """Stopword-filtered query tokens with domain synonym expansion."""
-        base = [
-            t for t in re.sub(r'[^a-z0-9 ]', '', query.lower()).split()
-            if t not in STOPWORDS
-        ]
+        base = self._base_query_tokens(query)
         expanded = []
         for t in base:
             expanded.append(t)
@@ -714,6 +790,7 @@ class RAGEngine:
         if self.tfidf is None or len(self.chunks) == 0:
             self.build_or_load_index()
 
+        base_tokens = self._base_query_tokens(query)
         query_tokens = self._query_tokens(query)
         query_expanded = " ".join(query_tokens)
 
@@ -736,19 +813,29 @@ class RAGEngine:
             cos_scores = np.zeros(len(self.chunks))
 
         # --- Keyword overlap (raw fraction, boundary-matched) ---
+        base_keyword_scores = np.array([
+            self._keyword_score(base_tokens, c["text"]) for c in self.chunks
+        ], dtype=float)
+
         keyword_scores = np.array([
             self._keyword_score(query_tokens, c["text"]) for c in self.chunks
         ], dtype=float)
 
-        # --- Hybrid score ---
-        # Keyword coverage is the primary signal; curated ground-truth chunks are
-        # amplified so they beat dense-but-noisy raw fragments on near-ties.
-        # TF-IDF cosine only nudges as a tiebreaker (and only when the query
-        # shares real vocabulary with the corpus, thanks to the gate above).
+        # Document title match boost (e.g. queries matching specific PDF names like ECE, EEE, Food Process, CET)
+        title_boost = np.zeros(len(self.chunks))
+        for i, c in enumerate(self.chunks):
+            doc_title_norm = re.sub(r'[^a-z0-9]+', ' ', c.get("doc_title", "").lower())
+            title_tokens = set(doc_title_norm.split())
+            matched = sum(1 for t in base_tokens if t in title_tokens)
+            if matched > 0:
+                title_boost[i] = matched / max(len(base_tokens), 1)
+
         curated = np.array([1.0 if c.get("curated") else 0.0 for c in self.chunks])
         hybrid_scores = (
-            1.20 * keyword_scores
-            + 0.35 * curated * keyword_scores
+            1.50 * base_keyword_scores
+            + 0.80 * keyword_scores
+            + 1.20 * title_boost
+            + 0.25 * curated * keyword_scores
             + 0.25 * cos_scores
         )
 
