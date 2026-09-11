@@ -2,7 +2,7 @@ import os
 
 import streamlit as st
 
-from answer_engine import generate_answer, handle_smalltalk, llm_configured
+from answer_engine import compare_programs, find_eligible_programs, generate_answer, handle_smalltalk, llm_configured
 from rag_engine import RAGEngine
 from llm_local import is_running_on_streamlit_cloud
 
