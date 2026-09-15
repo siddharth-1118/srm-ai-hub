@@ -807,37 +807,23 @@ def generate_answer(query, results, engine, config=None, chat_history=None):
         except Exception:
             pass
 
-    # Run targeted extractors first for exact rendering (e.g. hostel fee tables, placement stats)
-    for extractor in (_extract_phone_answer, _extract_placement_answer, _extract_hostel_answer):
-        ans = extractor(query, results)
-        if ans:
-            return ans, False
-
-    # Route broad listing queries to heuristic list composer for instant, 100% accurate results
-    listy = engine.is_list_query(query) or (
-        bool(_PROGRAM_WORDS.search(query.lower()))
-        and bool(_LIST_INTENT.search(query.lower()))
-    )
-    if listy:
-        ans = _compose_list_answer(results, engine, query)
-        if ans:
-            return ans, False
-
+    # 1. Cloud LLM API if configured
     if llm_configured(config):
         try:
             return llm_answer(query, results, config), True
-        except Exception as e:  # noqa: BLE001 - fall back to offline synthesis
-            print(f"LLM API answer failed ({e}); using local synthesis.")
+        except Exception as e:
+            print(f"LLM API answer failed ({e}); trying local neural LLM.")
             
-    # Try local offline LLM
+    # 2. Local PyTorch Neural Network Language Model (Qwen/Qwen2.5-0.5B-Instruct)
     try:
         from llm_local import generate_local_answer
         ans = generate_local_answer(query, results, chat_history)
         if ans:
             return ans, True
     except Exception as e:
-        print(f"Local offline LLM failed ({e}); using heuristic synthesis.")
-        
+        print(f"Local PyTorch Neural LLM failed ({e}); using fallback synthesis.")
+
+    # 3. Fallback synthesis
     return synthesize_answer(query, results, engine), False
 
 
