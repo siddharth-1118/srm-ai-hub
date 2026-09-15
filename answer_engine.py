@@ -509,13 +509,41 @@ def _extract_hostel_answer(query, results):
     return "\n\n".join(parts) if parts else None
 
 
+_TUITION_FEE_QUERY_RE = re.compile(
+    r'tuition\s*fee|course\s*fee|college\s*fee|b\.?tech\s*fee|mba\s*fee|m\.?tech\s*fee|mbbs\s*fee|bba\s*fee|bca\s*fee|fee\s*structure',
+    re.IGNORECASE
+)
+
+
+def _extract_tuition_fee_answer(query, results):
+    """Answer tuition fee queries using curated tuition fee chunks or relevant fee tables."""
+    if not _TUITION_FEE_QUERY_RE.search(query.lower()):
+        return None
+    
+    tuition_chunks = []
+    for res in results:
+        chunk = res["chunk"]
+        kind = chunk.get("kind")
+        text = chunk["text"]
+        if kind in ("tuition_fees_ug", "tuition_fees_pg") or "Tuition Fee" in text or "Tuition Fees" in text:
+            tuition_chunks.append(text)
+            
+    if not tuition_chunks:
+        return None
+        
+    lines = ["### SRMIST Official Tuition Fees Structure 2026-27\n"]
+    for text in tuition_chunks[:3]:
+        lines.append(text)
+    return "\n\n".join(lines)
+
+
 def synthesize_answer(query, results, engine):
     """Turn retrieved chunks into a natural-language answer (offline)."""
     if not results:
         return None
 
     # Targeted extractors first: exact, direct answers for common questions.
-    for extractor in (_extract_phone_answer, _extract_placement_answer, _extract_hostel_answer):
+    for extractor in (_extract_phone_answer, _extract_placement_answer, _extract_hostel_answer, _extract_tuition_fee_answer):
         answer = extractor(query, results)
         if answer:
             return answer

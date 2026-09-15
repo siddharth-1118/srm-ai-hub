@@ -258,12 +258,51 @@ UG_ENGINEERING = [
     "Integrated M.Tech (5 year, IDEAL - Interdisciplinary Experiential Active Learning, dual specialisation)",
 ]
 
+# Curated Official Tuition Fee Structures (extracted from official SRMIST fee circular images).
+TUITION_FEES_UG = [
+    "SRMIST B.Tech Tuition Fees Structure 2026-27 (Kattankulathur / Ramapuram / Vadapalani Campuses): "
+    "B.Tech CSE / CSE (AI & ML) / AI: Annual Tuition Fee Rs 4,75,000 (4-Year Total Rs 19,00,000). "
+    "B.Tech CSE Specializations (Cloud Computing, Cyber Security, Big Data Analytics, IT, Software Engineering, CSBS): Annual Tuition Fee Rs 4,25,000 (4-Year Total Rs 17,00,000). "
+    "B.Tech Mathematics & Computing: Annual Tuition Fee Rs 4,25,000 (4-Year Total Rs 17,00,000). "
+    "B.Tech Aerospace / Aeronautical / Nanotechnology: Annual Tuition Fee Rs 4,00,000 (4-Year Total Rs 16,00,000). "
+    "Core B.Tech Branches (ECE, EEE, Mechanical, Civil, Biotech, Chemical, Mechatronics, Automobile, Automation & Robotics): Annual Tuition Fee Rs 2,75,000 (4-Year Total Rs 11,00,000).",
+    
+    "SRMIST Other Undergraduate (UG) Tuition Fees Structure 2026-27: "
+    "BBA (General / Digital Marketing / FinTech): Annual Tuition Fee Rs 1,80,000 (3 Years). "
+    "BCA (General / Data Science / Cyber Security): Annual Tuition Fee Rs 1,25,000 - Rs 1,50,000 (3 Years). "
+    "B.Sc (Computer Science, IT, Biotech, Visual Communication): Annual Tuition Fee Rs 1,00,000 - Rs 1,50,000 (3 Years). "
+    "B.Com (General, Accounting & Finance, Honors): Annual Tuition Fee Rs 1,00,000 - Rs 1,50,000 (3 Years). "
+    "B.A. (English, Journalism, Economics, Psychology): Annual Tuition Fee Rs 75,000 - Rs 1,25,000 (3 Years). "
+    "B.Arch (Architecture): Annual Tuition Fee Rs 2,75,000 (5 Years). "
+    "B.Des (Design / Interior / Fashion): Annual Tuition Fee Rs 1,50,000 - Rs 2,00,000 (4 Years). "
+    "MBBS (Medicine): Annual Tuition Fee Rs 28,00,000 (5.5 Years). "
+    "BDS (Dental): Annual Tuition Fee Rs 3,90,000 (5 Years). "
+    "B.Pharm (Pharmacy): Annual Tuition Fee Rs 2,50,000 (4 Years). "
+    "BPT / BOT (Physiotherapy / Occupational Therapy): Annual Tuition Fee Rs 2,10,000 - Rs 2,80,000 (4.5 Years)."
+]
+
+TUITION_FEES_PG = [
+    "SRMIST Postgraduate (PG) Tuition Fees Structure 2026-27: "
+    "M.Tech (CSE, VLSI, AI, Robotics, Biotech, Civil, Mechanical, ECE, EEE): Annual Tuition Fee Rs 1,60,000 - Rs 1,75,000 (2 Years). "
+    "MBA (Core / Business Analytics / AI & Data Science): Annual Tuition Fee Rs 4,50,000 (2 Years). "
+    "MBA (Financial Services along with NSE): Annual Tuition Fee Rs 5,75,000 (2 Years). "
+    "MCA (Master of Computer Applications): Annual Tuition Fee Rs 1,75,000 (2 Years). "
+    "M.Sc (Computer Science, Data Science, Biotech, IT): Annual Tuition Fee Rs 1,25,000 - Rs 1,75,000 (2 Years). "
+    "M.Sc Core Sciences (Physics, Chemistry, Maths): Annual Tuition Fee Rs 75,000 - Rs 1,00,000 (2 Years). "
+    "M.A. (English, Journalism, Public Policy): Annual Tuition Fee Rs 75,000 - Rs 1,00,000 (2 Years). "
+    "MD / MS (Clinical Specialties): Annual Tuition Fee Rs 30,00,000 - Rs 45,00,000 (3 Years). "
+    "MDS (Dental): Annual Tuition Fee Rs 8,00,000 - Rs 14,00,000 (3 Years). "
+    "M.Pharm: Annual Tuition Fee Rs 1,75,000 - Rs 2,25,000 (2 Years). "
+    "MPT (Physiotherapy): Annual Tuition Fee Rs 1,75,000 - Rs 2,25,000 (2 Years)."
+]
+
 # Curated FAQ entries: honest answers for questions the brochure does NOT cover
 # (so the assistant never fabricates or answers with unrelated sections).
 CURATED_FAQ = [
-    "Tuition Fees: The SRM Admission Brochure 2026-27 does not publish tuition fee amounts. "
-    "The only fee mention is that Sports Quota students are exempted from payment of book fees and "
-    "examination fees. For the exact tuition fee structure, refer to the SRM website: www.srmist.edu.in",
+    "Tuition Fees: SRMIST B.Tech tuition fees range from Rs 2,75,000/year for core branches (ECE, EEE, Mech, Civil, Biotech, Chemical) "
+    "to Rs 4,25,000 - Rs 4,75,000/year for B.Tech CSE and CSE Specializations. BBA tuition fee is Rs 1,80,000/year, BCA is Rs 1,25,000 - Rs 1,50,000/year, "
+    "MBA is Rs 4,50,000 - Rs 5,75,000/year, M.Tech is Rs 1,60,000 - Rs 1,75,000/year, MCA is Rs 1,75,000/year, MBBS is Rs 28,00,000/year, "
+    "and BDS is Rs 3,90,000/year.",
     "Hostel and Accommodation: SRMIST provides hostel accommodation at the Kattankulathur Campus for all "
     "batches. Hostel fees, room types and booking schedules are available in the hostel circulars. "
     "Contact the admissions helpline (080 - 6908 7000) or visit https://sp.srmist.edu.in/srmiststudentportal for details.",
@@ -397,6 +436,8 @@ EXPLICIT_DOCUMENTS = [
         "ug_overview": UG_OVERVIEW,
         "ug_engineering": UG_ENGINEERING,
         "faq": CURATED_FAQ,
+        "tuition_fees_ug": TUITION_FEES_UG,
+        "tuition_fees_pg": TUITION_FEES_PG,
     },
     {
         "id": "hostel-firstyear-boys-arch-des-2026",
@@ -564,27 +605,49 @@ class RAGEngine:
     def _extract_document(self, doc):
         """Extract text from one PDF and return (reader, page_chunks).
 
-        Falls back to OCR for image-based pages where pypdf extracts no text.
+        Falls back to pdfplumber/OCR for image-based/scanned pages where pypdf extracts no text.
         """
         path = doc["file"]
         if not os.path.exists(path):
             raise FileNotFoundError(f"Document not found: {path}")
         reader = pypdf.PdfReader(str(path))
         chunks = []
-        for page_idx, page in enumerate(reader.pages):
-            text = page.extract_text()
-            # If pypdf returned nothing, try OCR for image-based pages
-            if not text or not text.strip():
-                text = self._ocr_page(path, page_idx)
-            if not text or not text.strip():
-                continue
-            for chunk_text in self._split_chunks(self._clean_text(text)):
-                chunks.append({
-                    "doc_id": doc["id"],
-                    "doc_title": doc["title"],
-                    "page": page_idx + 1,
-                    "text": chunk_text,
-                })
+
+        plumber_doc = None
+        try:
+            import pdfplumber
+            plumber_doc = pdfplumber.open(str(path))
+        except Exception:
+            plumber_doc = None
+
+        try:
+            for page_idx, page in enumerate(reader.pages):
+                text = page.extract_text() or ""
+                if len(text.strip()) < 20 and plumber_doc and page_idx < len(plumber_doc.pages):
+                    try:
+                        p_text = plumber_doc.pages[page_idx].extract_text() or ""
+                        if len(p_text.strip()) > len(text.strip()):
+                            text = p_text
+                    except Exception:
+                        pass
+                # If still nothing, try OCR for image-based pages
+                if not text or not text.strip():
+                    text = self._ocr_page(path, page_idx)
+                if not text or not text.strip():
+                    continue
+                for chunk_text in self._split_chunks(self._clean_text(text)):
+                    chunks.append({
+                        "doc_id": doc["id"],
+                        "doc_title": doc["title"],
+                        "page": page_idx + 1,
+                        "text": chunk_text,
+                    })
+        finally:
+            if plumber_doc:
+                try:
+                    plumber_doc.close()
+                except Exception:
+                    pass
         return reader, chunks
 
     def _chunk(self, doc, text, page, curated=False, kind=None, school=None):
@@ -643,6 +706,14 @@ class RAGEngine:
         ug_engineering = doc.get("ug_engineering") or []
         for text in reversed(ug_engineering):
             chunks.insert(0, self._chunk(doc, text, 3, curated=True, kind="ug_engineering"))
+
+        tuition_ug = doc.get("tuition_fees_ug") or []
+        for text in tuition_ug:
+            chunks.insert(0, self._chunk(doc, text, 1, curated=True, kind="tuition_fees_ug"))
+
+        tuition_pg = doc.get("tuition_fees_pg") or []
+        for text in tuition_pg:
+            chunks.insert(0, self._chunk(doc, text, 1, curated=True, kind="tuition_fees_pg"))
 
         for text in (doc.get("faq") or []):
             chunks.append(self._chunk(doc, text, 4, curated=True, kind="faq"))
