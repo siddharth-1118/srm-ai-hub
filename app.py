@@ -184,11 +184,21 @@ with st.sidebar:
     st.markdown("### 🤖 AI Answer Engine")
     provider_choice = st.selectbox(
         "AI Provider",
-        options=["Local Smart AI (Offline & Deployment Ready)", "Google Gemini (Free API Key)", "Groq (Ultra-Fast Llama 3.3)", "OpenAI / Custom API", "Local Qwen (PyTorch Model)"],
+        options=[
+            "Local Smart AI (Offline & Deployment Ready)",
+            "Custom PyTorch Neural LLM (Built from Scratch)",
+            "Local Qwen (PyTorch Model)",
+            "Google Gemini (Free API Key)",
+            "Groq (Ultra-Fast Llama 3.3)",
+            "OpenAI / Custom API",
+        ],
         index=0
     )
 
-    if provider_choice == "Google Gemini (Free API Key)":
+    if provider_choice == "Custom PyTorch Neural LLM (Built from Scratch)":
+        provider_name = "custom_llm"
+        default_model = "custom_srm_llm.pt"
+    elif provider_choice == "Google Gemini (Free API Key)":
         provider_name = "gemini"
         default_model = "gemini-2.0-flash"
     elif provider_choice == "Groq (Ultra-Fast Llama 3.3)":

@@ -799,31 +799,51 @@ def llm_answer(query, results, config=None, timeout=60):
 
 
 def generate_answer(query, results, engine, config=None, chat_history=None):
+    config = config or {}
+    provider = config.get("provider", "local_smart")
+
     # Contextualize follow-up questions if chat history exists
-    if chat_history:
+    if chat_history and provider not in ("local_smart",):
         try:
             from llm_local import contextualize_query
             query = contextualize_query(query, chat_history, config)
         except Exception:
             pass
 
-    # 1. Cloud LLM API if configured
+    # Option A: Cloud LLM API if explicitly configured with an API key
     if llm_configured(config):
         try:
             return llm_answer(query, results, config), True
         except Exception as e:
-            print(f"LLM API answer failed ({e}); trying local neural LLM.")
-            
-    # 2. Local PyTorch Neural Network Language Model (Qwen/Qwen2.5-0.5B-Instruct)
-    try:
-        from llm_local import generate_local_answer
-        ans = generate_local_answer(query, results, chat_history)
-        if ans:
-            return ans, True
-    except Exception as e:
-        print(f"Local PyTorch Neural LLM failed ({e}); using fallback synthesis.")
+            print(f"LLM API answer failed ({e}); using local synthesis.")
 
-    # 3. Fallback synthesis
+    # Option B: Custom PyTorch Neural Network LLM built from scratch
+    if provider == "custom_llm":
+        try:
+            import torch
+            from custom_llm import CustomSRMLLM, Tokenizer, MODEL_PATH, VOCAB_PATH
+            if MODEL_PATH.exists() and VOCAB_PATH.exists():
+                tok = Tokenizer.load(VOCAB_PATH)
+                vocab_size = len(tok.vocab)
+                model = CustomSRMLLM(vocab_size=vocab_size, embed_dim=128, num_heads=4, num_layers=3, ffn_dim=256, max_seq_len=128)
+                model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+                gen_text = model.generate(tok, query, max_new_tokens=40)
+                if gen_text:
+                    return f"**Custom PyTorch Neural LLM Output:**\n\n{gen_text}", True
+        except Exception as e:
+            print(f"Custom Neural LLM error ({e}); using local smart AI.")
+
+    # Option C: Local PyTorch Qwen Neural LLM if explicitly selected
+    if provider == "local":
+        try:
+            from llm_local import generate_local_answer
+            ans = generate_local_answer(query, results, chat_history)
+            if ans:
+                return ans, True
+        except Exception as e:
+            print(f"Local PyTorch Neural LLM failed ({e}); using local smart AI.")
+
+    # Option C: Default Self-Contained Fast Local AI Engine (Sub-second response, 100% factual & offline)
     return synthesize_answer(query, results, engine), False
 
 
