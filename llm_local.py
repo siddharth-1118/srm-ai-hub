@@ -110,9 +110,6 @@ def format_btech_programs():
 
 def generate_local_answer(question, results, chat_history):
     """Generates an answer using the local Qwen model using the requested prompt template."""
-    if is_running_on_streamlit_cloud():
-        return None
-        
     generator = load_local_model()
     
     # Dynamic Context Injection for listing queries
@@ -299,12 +296,9 @@ def generate_local_answer(question, results, chat_history):
     
     outputs = generator(
         prompt,
-        max_length=4096,
-        max_new_tokens=512,
-        temperature=0.2,
-        do_sample=True,
-        repetition_penalty=1.2,
-        top_p=0.9,
+        max_new_tokens=256,
+        do_sample=False,
+        repetition_penalty=1.1,
         pad_token_id=generator.tokenizer.eos_token_id
     )
     
