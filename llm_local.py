@@ -110,9 +110,6 @@ def format_btech_programs():
 
 def generate_local_answer(question, results, chat_history):
     """Generates an answer using the local Qwen model using the requested prompt template."""
-    if is_running_on_streamlit_cloud():
-        return None
-        
     generator = load_local_model()
     
     # Dynamic Context Injection for listing queries
