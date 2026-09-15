@@ -431,9 +431,14 @@ def _extract_hostel_answer(query, results):
     if not _HOSTEL_QUERY_RE.search(query.lower()):
         return None
 
-    # Check if a specific hostel name is mentioned in the query
-    hostel_words = [w for w in re.findall(r'\b[a-zA-Z]+\b', query.lower()) 
-                    if w not in ["what", "is", "the", "fees", "of", "boys", "girls", "hostel", "accommodation", "room", "sharing", "rates", "srm", "srmist"]]
+    hostel_stop = {
+        "what", "are", "is", "the", "fees", "fee", "fess", "feee", "of", "for", "in", "at",
+        "boys", "girls", "hostel", "hostels", "accommodation", "room", "rooms", "sharing",
+        "rates", "rate", "cost", "srm", "srmist", "campus", "kattankulathur", "ramapuram",
+        "vadapalani", "first", "year", "senior", "batch", "tell", "me", "show", "give",
+        "how", "much", "details", "structure", "list", "all", "available", "info"
+    }
+    hostel_words = [w for w in re.findall(r'\b[a-zA-Z]+\b', query.lower()) if w not in hostel_stop]
     if hostel_words:
         matched_in_chunks = False
         for word in hostel_words:
@@ -445,22 +450,20 @@ def _extract_hostel_answer(query, results):
                 break
         
         if not matched_in_chunks:
-            potential_names = [w for w in hostel_words if w not in ["srm", "srmist", "campus", "kattankulathur", "fees", "fee"]]
-            if potential_names:
-                name_cap = " ".join([w.capitalize() for w in potential_names])
-                return (
-                    f"I couldn't find the fees for **{name_cap} Hostel** in the provided SRM circulars.\n\n"
-                    "The available circulars only list fees for these boys hostels:\n"
-                    "- **Pierre Fauchard (PF)**\n"
-                    "- **N Block**\n"
-                    "- **Green Pearl (off-campus)**\n"
-                    "- **Adhiyaman**\n"
-                    "- **Oori**\n"
-                    "- **Kaari**\n"
-                    "- **Nelson Mandela**\n"
-                    "- **Sannasi**\n"
-                    "- **JA Block 2 (off-campus)**"
-                )
+            name_cap = " ".join([w.capitalize() for w in hostel_words])
+            return (
+                f"I couldn't find the fees for **{name_cap} Hostel** in the provided SRM circulars.\n\n"
+                "The available circulars only list fees for these boys hostels:\n"
+                "- **Pierre Fauchard (PF)**\n"
+                "- **N Block**\n"
+                "- **Green Pearl (off-campus)**\n"
+                "- **Adhiyaman**\n"
+                "- **Oori**\n"
+                "- **Kaari**\n"
+                "- **Nelson Mandela**\n"
+                "- **Sannasi**\n"
+                "- **JA Block 2 (off-campus)**\n"
+            )
 
     # Detect if a known hostel is explicitly requested to filter rows
     KNOWN_HOSTELS_LOWER = [
@@ -510,16 +513,22 @@ def _extract_hostel_answer(query, results):
 
 
 _TUITION_FEE_QUERY_RE = re.compile(
-    r'tuition\s*fee|course\s*fee|college\s*fee|b\.?tech\s*fee|mba\s*fee|m\.?tech\s*fee|mbbs\s*fee|bba\s*fee|bca\s*fee|fee\s*structure',
+    r'\b(tuition|course|college|b\.?tech|m\.?tech|mba|mbbs|bba|bca|mca|b\.?sc|m\.?sc|law|b\.?arch|fees?|fess?|feee?|fee\s*structure|cost|charge|charges|how\s+much)\b',
     re.IGNORECASE
 )
 
 
 def _extract_tuition_fee_answer(query, results):
-    """Answer tuition fee queries using curated tuition fee chunks or relevant fee tables."""
-    if not _TUITION_FEE_QUERY_RE.search(query.lower()):
+    """Answer tuition fee queries using curated tuition fee chunks or relevant fee tables, filtered for specific programs if requested."""
+    q_lower = query.lower()
+    if not _TUITION_FEE_QUERY_RE.search(q_lower):
         return None
-    
+    # Yield to hostel extractor if query specifically asks for hostel/room/mess accommodation
+    if re.search(r'\b(hostel|room|accommodation|mess|laundry)\b', q_lower):
+        return None
+
+    from rag_engine import TUITION_FEES_UG, TUITION_FEES_PG
+
     tuition_chunks = []
     for res in results:
         chunk = res["chunk"]
@@ -527,14 +536,78 @@ def _extract_tuition_fee_answer(query, results):
         text = chunk["text"]
         if kind in ("tuition_fees_ug", "tuition_fees_pg") or "Tuition Fee" in text or "Tuition Fees" in text:
             tuition_chunks.append(text)
-            
+
     if not tuition_chunks:
-        return None
-        
-    lines = ["### SRMIST Official Tuition Fees Structure 2026-27\n"]
-    for text in tuition_chunks[:3]:
-        lines.append(text)
-    return "\n\n".join(lines)
+        tuition_chunks = TUITION_FEES_UG + TUITION_FEES_PG
+
+    # Extract individual fee statements from the chunks
+    all_lines = []
+    for text in tuition_chunks:
+        # Strip header prefix if present (e.g. SRMIST B.Tech Tuition Fees Structure 2026-27...:)
+        clean_t = re.sub(r'^SRMIST[^\n:]+:\s*', '', text.strip())
+        parts = re.split(r'(?<=\.)\s+|\n', clean_t)
+        for p in parts:
+            p = p.strip()
+            if ("Annual Tuition Fee" in p or "Tuition Fee" in p or "Rs " in p):
+                if p not in all_lines:
+                    all_lines.append(p)
+
+    # Keywords mapping for branch / specialization filtering
+    branch_map = {
+        ("cseaiml", "aiml", "ai", "ml", "artificial intelligence", "machine learning"): ["CSE (AI & ML)", "AI & ML", "AI", "Machine Learning", "Artificial Intelligence"],
+        ("cse", "computer science"): ["B.Tech CSE", "CSE (AI & ML)", "CSE Specializations", "Computer Science"],
+        ("data science",): ["Data Science"],
+        ("cloud",): ["Cloud"],
+        ("cyber",): ["Cyber"],
+        ("maths", "mathematics"): ["Mathematics"],
+        ("aerospace", "aeronautical"): ["Aerospace", "Aeronautical"],
+        ("ece", "electronics"): ["ECE", "Electronics"],
+        ("eee", "electrical"): ["EEE", "Electrical"],
+        ("mech", "mechanical"): ["Mechanical", "Mech"],
+        ("civil",): ["Civil"],
+        ("biotech", "biotechnology"): ["Biotech", "Biotechnology"],
+        ("btech",): ["B.Tech"],
+        ("mtech",): ["M.Tech"],
+        ("mba",): ["MBA"],
+        ("mca",): ["MCA"],
+        ("bba",): ["BBA"],
+        ("bca",): ["BCA"],
+        ("bsc",): ["B.Sc"],
+        ("msc",): ["M.Sc"],
+        ("mbbs",): ["MBBS"],
+        ("bds",): ["BDS"],
+        ("barch", "architecture"): ["B.Arch", "Architecture"],
+        ("law", "llm"): ["LL.M", "Law"],
+    }
+
+    matched_entries = []
+    has_specific_branch = False
+
+    for keywords, targets in branch_map.items():
+        if any(k in q_lower for k in keywords):
+            if not (len(keywords) == 1 and keywords[0] in ("btech", "mtech") and any(b in q_lower for b in ("cseaiml", "aiml", "cse", "ece", "eee", "mech", "civil", "biotech", "cloud", "cyber"))):
+                has_specific_branch = True
+            for line in all_lines:
+                if any(t.lower() in line.lower() for t in targets):
+                    if line not in matched_entries:
+                        matched_entries.append(line)
+
+    if matched_entries and has_specific_branch:
+        formatted = ["### SRMIST Official Tuition Fee Structure 2026-27\n"]
+        for entry in matched_entries[:2]:
+            formatted.append(f"• **{entry}**")
+        return "\n".join(formatted)
+
+    if matched_entries:
+        formatted = ["### SRMIST Official Tuition Fee Structure 2026-27\n"]
+        for entry in matched_entries[:6]:
+            formatted.append(f"• **{entry}**")
+        return "\n".join(formatted)
+
+    formatted = ["### SRMIST Official Tuition Fee Structure 2026-27\n"]
+    for entry in all_lines[:6]:
+        formatted.append(f"• {entry}")
+    return "\n".join(formatted)
 
 
 def synthesize_answer(query, results, engine):

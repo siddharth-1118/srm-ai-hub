@@ -112,6 +112,18 @@ QUERY_SYNONYMS = {
     "srmjeel": "srmjeel srmjee law",
     "srmjeem": "srmjeem srmjee management",
     "pgeta": "pgeta architecture",
+    "fee": "fee fees fess feee cost tuition structure",
+    "fees": "fees fee fess feee cost tuition structure",
+    "fess": "fees fee fess feee cost tuition structure",
+    "feee": "fees fee fess feee cost tuition structure",
+    "tuition": "tuition fee fees cost",
+    "cseaiml": "cse ai ml aiml cseaiml artificial intelligence machine learning",
+    "aiml": "ai ml aiml cseaiml artificial intelligence machine learning",
+    "cse": "cse computer science",
+    "ece": "ece electronics communication",
+    "eee": "eee electrical electronics",
+    "mech": "mechanical mech",
+    "biotech": "biotechnology biotech",
 }
 
 # Curated Postgraduate (PG) program directory extracted from the 2026-27 brochure
