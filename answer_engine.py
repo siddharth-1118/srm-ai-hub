@@ -347,7 +347,7 @@ def _extract_placement_answer(query, results):
 
 
 _HOSTEL_QUERY_RE = re.compile(
-    r'hostel|room\s+fee|accommodation\s+fee|room\s+rent',
+    r'hostels?|hotsel|hostal|hostle|room\s+fee|accommodation\s+fee|room\s+rent|meenakshi|kalpana|chawla|thamarai|mullai|senbagam|kopperundevi|pierre|fauchard|pf|sannasi|malligai|adhiyaman|oori|kaari|mandela|green\s+pearl',
     re.IGNORECASE
 )
 
