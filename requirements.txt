@@ -5,6 +5,5 @@ numpy>=2.1.0
 pymupdf>=1.25.0
 rapidocr-onnxruntime>=1.4.0
 pillow>=11.0.0
-torch
-transformers
+
 
