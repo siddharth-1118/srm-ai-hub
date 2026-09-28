@@ -544,20 +544,23 @@ def _format_pdf_title(stem: str) -> str:
 
 
 def get_all_documents():
-    """Dynamically scan BASE_DIR for all .pdf files, merging explicit and auto-discovered docs."""
+    """Dynamically scan BASE_DIR for all .pdf and .txt files, merging explicit and auto-discovered docs."""
     docs_by_path = {}
     
     for doc in EXPLICIT_DOCUMENTS:
         resolved = Path(doc["file"]).resolve()
         docs_by_path[resolved] = doc
 
-    for pdf_path in sorted(BASE_DIR.glob("*.pdf")):
-        resolved = pdf_path.resolve()
+    discovered_files = sorted(list(BASE_DIR.glob("*.pdf")) + list(BASE_DIR.glob("*.txt")))
+    for file_path in discovered_files:
+        if file_path.name in ("requirements.txt", "runtime.txt"):
+            continue
+        resolved = file_path.resolve()
         if resolved not in docs_by_path:
             docs_by_path[resolved] = {
-                "id": pdf_path.stem.lower().replace(" ", "-"),
+                "id": file_path.stem.lower().replace(" ", "-"),
                 "file": resolved,
-                "title": _format_pdf_title(pdf_path.stem),
+                "title": _format_pdf_title(file_path.stem),
             }
 
     return list(docs_by_path.values())
@@ -633,15 +636,31 @@ class RAGEngine:
         return ""
 
     def _extract_document(self, doc):
-        """Extract text from one PDF and return (reader, page_chunks).
+        """Extract text from one PDF or TXT file and return (reader, page_chunks).
 
         Falls back to pdfplumber/OCR for image-based/scanned pages where pypdf extracts no text.
         """
         path = doc["file"]
         if not os.path.exists(path):
             raise FileNotFoundError(f"Document not found: {path}")
-        reader = pypdf.PdfReader(str(path))
+
         chunks = []
+        if str(path).lower().endswith(".txt"):
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+                for chunk_text in self._split_chunks(self._clean_text(text)):
+                    chunks.append({
+                        "doc_id": doc["id"],
+                        "doc_title": doc["title"],
+                        "page": 1,
+                        "text": chunk_text,
+                    })
+            except Exception as e:
+                _ocr_log.warning("Failed reading text file %s: %s", path, e)
+            return None, chunks
+
+        reader = pypdf.PdfReader(str(path))
 
         plumber_doc = None
         try:
@@ -693,6 +712,8 @@ class RAGEngine:
 
     def _inject_srm_placements(self, doc, chunks, reader):
         """Brochure-specific: inject a human-readable placements summary chunk."""
+        if not reader:
+            return
         full_text = ""
         for page_idx, page in enumerate(reader.pages):
             text = page.extract_text() or ""

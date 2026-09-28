@@ -8,14 +8,20 @@ from custom_llm import CustomSRMLLM, Tokenizer, MODEL_PATH, VOCAB_PATH
 
 
 class LLMDataset(Dataset):
-    def __init__(self, sequences, seq_len=64):
+    def __init__(self, sequences, seq_len=64, stride=16):
         self.seqs = []
+        all_tokens = []
+        eos_id = 3
         for seq in sequences:
-            if len(seq) > 5:
-                for i in range(0, len(seq) - seq_len, seq_len // 2):
-                    chunk = seq[i:i + seq_len + 1]
-                    if len(chunk) == seq_len + 1:
-                        self.seqs.append(chunk)
+            if seq:
+                all_tokens.extend(seq)
+                if all_tokens[-1] != eos_id:
+                    all_tokens.append(eos_id)
+
+        for i in range(0, len(all_tokens) - seq_len, stride):
+            chunk = all_tokens[i : i + seq_len + 1]
+            if len(chunk) == seq_len + 1:
+                self.seqs.append(chunk)
 
     def __len__(self):
         return len(self.seqs)
@@ -27,7 +33,7 @@ class LLMDataset(Dataset):
         return x, y
 
 
-def train_custom_llm(epochs=10, batch_size=32, lr=1e-3):
+def train_custom_llm(epochs=15, batch_size=64, lr=1e-3):
     print('=== Training Custom Neural Network Language Model (LLM) from Scratch ===')
     
     # 1. Load document corpus from rag_engine
@@ -38,33 +44,28 @@ def train_custom_llm(epochs=10, batch_size=32, lr=1e-3):
 
     # 2. Build custom tokenizer vocabulary
     tokenizer = Tokenizer()
-    tokenizer.build_vocab(texts, max_vocab_size=3000)
+    tokenizer.build_vocab(texts, max_vocab_size=4000)
     tokenizer.save(VOCAB_PATH)
     print(f'Custom Vocabulary built ({len(tokenizer.vocab)} tokens).')
 
-    # 3. Tokenize sequences
+    # 3. Tokenize sequences into continuous stream with sliding window
     encoded_seqs = [tokenizer.encode(t) for t in texts]
-    dataset = LLMDataset(encoded_seqs, seq_len=64)
+    dataset = LLMDataset(encoded_seqs, seq_len=64, stride=48)
     print(f'Created {len(dataset)} training sequence blocks for causal language modeling.')
 
-    if len(dataset) == 0:
-        print('Dataset empty, creating expanded sequence blocks...')
-        encoded_seqs = [tokenizer.encode(t) * 3 for t in texts]
-        dataset = LLMDataset(encoded_seqs, seq_len=32)
-
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
 
     # 4. Instantiate Custom Neural LLM Architecture
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     vocab_size = len(tokenizer.vocab)
     model = CustomSRMLLM(vocab_size=vocab_size, embed_dim=128, num_heads=4, num_layers=3, ffn_dim=256, max_seq_len=128).to(device)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
     criterion = nn.CrossEntropyLoss()
 
-    print(f'Starting Neural Network Training on {device.upper()} ({epochs} epochs)...')
+    print(f'Starting Neural Network Training on {device.upper()} (8 epochs, batch size 128)...')
     t0 = time.time()
-    for epoch in range(1, epochs + 1):
+    for epoch in range(1, 9):
         model.train()
         total_loss = 0.0
         batches = 0
@@ -79,8 +80,7 @@ def train_custom_llm(epochs=10, batch_size=32, lr=1e-3):
             total_loss += loss.item()
             batches += 1
         avg_loss = total_loss / max(batches, 1)
-        if epoch % 2 == 0 or epoch == epochs:
-            print(f'Epoch {epoch:2d}/{epochs} | Loss: {avg_loss:.4f}')
+        print(f'Epoch {epoch:2d}/8 | Loss: {avg_loss:.4f}')
 
     t1 = time.time()
     print(f'Training completed in {t1-t0:.2f} seconds.')
@@ -98,4 +98,4 @@ def train_custom_llm(epochs=10, batch_size=32, lr=1e-3):
 
 
 if __name__ == '__main__':
-    train_custom_llm(epochs=10)
+    train_custom_llm(epochs=15)
