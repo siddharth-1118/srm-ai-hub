@@ -553,7 +553,7 @@ def get_all_documents():
 
     discovered_files = sorted(list(BASE_DIR.glob("*.pdf")) + list(BASE_DIR.glob("*.txt")))
     for file_path in discovered_files:
-        if file_path.name in ("requirements.txt", "runtime.txt"):
+        if file_path.name in ("requirements.txt", "runtime.txt", "scrape_srm_websites.py"):
             continue
         resolved = file_path.resolve()
         if resolved not in docs_by_path:
@@ -643,13 +643,12 @@ class RAGEngine:
         path = doc["file"]
         if not os.path.exists(path):
             raise FileNotFoundError(f"Document not found: {path}")
-
         chunks = []
         if str(path).lower().endswith(".txt"):
             try:
                 with open(path, "r", encoding="utf-8", errors="ignore") as f:
                     text = f.read()
-                for chunk_text in self._split_chunks(self._clean_text(text)):
+                for chunk_text in self._split_chunks(self._clean_text(text), chunk_size=400, overlap=100):
                     chunks.append({
                         "doc_id": doc["id"],
                         "doc_title": doc["title"],
@@ -794,7 +793,7 @@ class RAGEngine:
         for text in hostel_curated:
             chunks.insert(0, self._chunk(doc, text, 1, curated=True, kind="hostel_fees"))
 
-        if doc["id"] == "srm-admissions-2026-27":
+        if doc["id"] == "srm-admissions-2026-27" and reader is not None:
             self._inject_srm_placements(doc, chunks, reader)
 
     def build_or_load_index(self, force_rebuild=False):

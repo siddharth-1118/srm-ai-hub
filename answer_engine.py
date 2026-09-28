@@ -292,7 +292,7 @@ def _compose_fact_answer(query, results, engine, max_sentences=4):
 
 _PHONE_QUERY_RE = re.compile(r'helpline|phone|contact|toll\s*free|reach')
 _PLACEMENT_QUERY_RE = re.compile(
-    r'placement|placements|salary|lpa|package|recruit|recruitment|job\s*offer|companies\s*visited|highest\s*offer',
+    r'placements?|placments?|placetments?|palcements?|salary|salaries|lpa|package|packages|recruit|recruitment|recruiters|job\s*offer|companies\s*visited|highest\s*offer',
     re.IGNORECASE
 )
 
