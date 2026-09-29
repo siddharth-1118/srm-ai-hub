@@ -611,6 +611,10 @@ class RAGEngine:
             if len(chunk_text) > 30:  # ignore tiny useless fragments
                 yield chunk_text
             start = end - overlap
+            if start < len(cleaned_text) and start > 0:
+                space_idx = cleaned_text.find(' ', start)
+                if space_idx != -1 and space_idx < start + 40:
+                    start = space_idx + 1
             if start >= len(cleaned_text):
                 break
 

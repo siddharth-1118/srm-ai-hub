@@ -35,9 +35,12 @@ _PHONE_RE = re.compile(r'\b0\d{2}\s*-\s*\d{4}\s*\d{4}\b')
 
 
 def _split_sentences(text):
-    """Split text into sentences, keeping abbreviations intact."""
-    protected = _ABBREV_PROTECT.sub(r'\1', text)
-    return [s.strip() for s in _SENT_SPLIT.split(protected) if s.strip()]
+    """Split text into complete sentences cleanly without trimming letters from words."""
+    if not text:
+        return []
+    text = re.sub(r'\s+', ' ', text).strip()
+    raw_sentences = _SENT_SPLIT.split(text)
+    return [s.strip() for s in raw_sentences if len(s.strip()) > 5]
 
 
 def _score_sentence(sentence, tokens):
